@@ -43,11 +43,11 @@ python script_name.py input_video.mp4 --resolution 480 --bitrate mid
 ```
 
 ### 3. Sharing on Social Media:
-For platforms like Instagram, videos are often viewed on mobile screens, so they don't necessarily need to be in full resolution. Furthermore, there's a maximum video file size limit for uploading.
+For platforms like Instagram, videos are often viewed on mobile screens, and it's better to just crop the video for Reels format 
 
 ```bash
-# Convert video for Instagram with 720p resolution, 'mid' bitrate, and cropped for portrait mode
-python script_name.py input_video.mp4 --resolution 720 --bitrate mid --crop
+# Convert video for Instagram with 1080p resolution, unchanged bitrate, and cropped for portrait mode
+python script_name.py input_video.mp4 --crop
 ```
 
 ### 4. Using a More Efficient Codec:
@@ -57,6 +57,7 @@ The H.265 (or HEVC) codec offers better compression than its predecessor, H.264.
 # Convert video to H.265 codec for better compression
 python script_name.py input_video.mp4 --codec h265
 ```
+NOTE: This is on by default. More codec (+ output file container) options coming in future updates. 
 
 ### 5. Preserving Quality:
 If you don't want to compromise on video quality but need to convert it for compatibility reasons, you can keep the bitrate and resolution unchanged.
