@@ -117,7 +117,9 @@ def generate_speed_map_image(coords):
     m.save('speed_map.html')
     
     # Convert HTML to PNG using selenium
-    driver = webdriver.Firefox()
+    options = webdriver.FirefoxOptions()
+    options.headless = True
+    driver = webdriver.Firefox(options=options)
     driver.get('file://' + os.path.abspath('speed_map.html'))
     time.sleep(5)
     driver.save_screenshot('speed_map.png')
@@ -151,16 +153,18 @@ def generate_speedmap_GIF(coords):
             icon=folium.Icon(color='red')
         ).add_to(m)
         
-        m.save(f'speed_map_frame_{i}.html')
+        m.save(os.path.join('temp', f'speed_map_frame_{i}.html'))
         
         # Convert HTML to PNG using selenium
-        driver = webdriver.Firefox()
-        driver.get('file://' + os.path.abspath(f'speed_map_frame_{i}.html'))
+        options = webdriver.FirefoxOptions()
+        options.headless = True
+        driver = webdriver.Firefox(options=options)
+        driver.get('file://' + os.path.abspath(os.path.join('temp', f'speed_map_frame_{i}.html')))
         time.sleep(2)  # Give it a few seconds to render
-        driver.save_screenshot(f'speed_map_frame_{i}.png')
+        driver.save_screenshot(os.path.join('temp', f'speed_map_frame_{i}.png'))
         driver.quit()
         
-        images.append(imageio.imread(f'speed_map_frame_{i}.png'))
+        images.append(imageio.imread(os.path.join('temp', f'speed_map_frame_{i}.png')))
     
     # Convert images to GIF
     imageio.mimsave('speed_map.GIF', images, fps=1)
@@ -213,7 +217,6 @@ def overlay_kpis_GIF_on_video(video_file):
 '''
 
 def overlay_all_elements_on_video(video_file):
-
     os.system(f'''
         ffmpeg -y -i {video_file} \
                -i elevation.GIF \
