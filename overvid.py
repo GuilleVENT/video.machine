@@ -93,7 +93,8 @@ def generate_elevation_GIF(coords, video_fps):
     ani = animation.FuncAnimation(fig, lambda i: point.set_data(i, coords_plot['ele'].iloc[i]), frames=len(coords_plot), interval=interval)
     writerGIF = animation.PillowWriter(fps=1)#video_fps)
     ani.save('elevation.GIF', writer=writerGIF)
-
+    
+'''
 def generate_speed_map_image(coords):
     m = folium.Map(location=[coords['lat'].mean(), coords['lon'].mean()], zoom_start=15)
     
@@ -124,7 +125,7 @@ def generate_speed_map_image(coords):
     time.sleep(5)
     driver.save_screenshot('speed_map.png')
     driver.quit()
-
+'''
 def generate_speedmap_GIF(coords):
     images = []
     
