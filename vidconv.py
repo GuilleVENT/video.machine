@@ -60,7 +60,10 @@ def get_video_info(input_file):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     
     try:
-        return json.loads(result.stdout)
+        info = json.loads(result.stdout)
+        if 'streams' not in info:
+            sys.exit(f"Error: 'streams' key not found in ffprobe output for file {input_file}. The file might be corrupted or not supported.")
+        return info
     except json.JSONDecodeError:
         sys.exit("Error: Invalid JSON output from ffprobe. Please ensure the input file is a valid video.")
 
@@ -88,7 +91,7 @@ def should_process_video(input_file, options):
     }
 
     # Check if the file is an mp4 or not
-    if input_file.split('.')[-1].lower() not in VALID_VIDEO_EXTENSIONS:
+    if input_file.split('.')[-1].lower() not in VALID_VIDEO_EXTENSIONS:# or input_file.startswith('.'):
         process_flags['valid_filetype'] = False
 
     info = get_video_info(input_file)
@@ -186,7 +189,7 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
 
         if len(options['cut']) == 1:
             start_time = options['cut'][0]
-            
+
             if options.get('length'):
                 minutes, seconds = divmod(options['length'], 1)  # Split whole number from decimal
                 duration = minutes * 60 + seconds * 60  # Convert minutes to seconds and add additional seconds
@@ -271,7 +274,10 @@ def run_file(in_file, options):
     -------
     None
     """
-    if os.path.isfile(in_file):
+    logging.info(f'- Input file: {in_file}')
+    logging.info(f'{os.path.basename(in_file)}')
+
+    if in_file.split('.')[-1].lower() in VALID_VIDEO_EXTENSIONS : ## not .DS_Store
         flags = should_process_video(in_file, options)
         if flags['valid_filetype']:
             if any(flags.values()):  # Check if any of the flags are set to True
@@ -284,6 +290,7 @@ def run_file(in_file, options):
                     os.remove(in_file)
         else:
             print(f"Skipping {in_file} as it looks like criteria is already be satisfied.")
+    else: return
 
 
 def check_command_availability(command):
@@ -328,10 +335,10 @@ def main():
         'cut': args.cut,
         'length': args.length
     }
-
+    
     if args.cut and len(args.cut) > 1 and args.length:
         raise ValueError("Error: When providing a list for --cut, you cannot also provide --length. Length is to be used with a start-timestamp in --cut without end-stimestamp. ")
-        
+    
     check_command_availability("ffmpeg")
     check_command_availability("ffprobe")
 
@@ -342,15 +349,14 @@ def main():
     elif os.path.isdir(args.input_path):
         # If the remove option is set, ask for confirmation
         if args.remove:
-            confirm = input(f"You are about to remove all files in the directory '{args.input_path}'. Are you sure? (then type yes or y): ")
+            confirm = input(f"You are about to remove all files in the directory '{args.input_path}' and its subdirectories. Are you sure? (then type yes or y): ")
             if confirm.lower() not in ['yes','y']:
                 sys.exit("Operation aborted.")
                 
-        files = [f for f in os.listdir(args.input_path) if os.path.isfile(os.path.join(args.input_path, f))]
-        
-        for file in files:
-            full_path = os.path.join(args.input_path, file)
-            run_file(full_path, options)  
+        for dirpath, dirnames, filenames in os.walk(args.input_path):
+            for file in filenames:
+                full_path = os.path.join(dirpath, file)
+                run_file(full_path, options)
     else:
         print("Invalid path. Please provide a valid video file or directory.")
 
