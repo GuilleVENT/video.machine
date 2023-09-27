@@ -282,15 +282,14 @@ def run_file(in_file, options):
         if flags['valid_filetype']:
             if any(flags.values()):  # Check if any of the flags are set to True
                 in_file, output_file = prepare_strings_outfiles(in_file, options, flags)
-            
-                # Modify run_ffmpeg_conversion to take into account the flags
-                run_ffmpeg_conversion(in_file, output_file, options, flags)
+                if not os.path.isfile(output_file): # if file doesn't exist yet
+                    # Modify run_ffmpeg_conversion to take into account the flags
+                    run_ffmpeg_conversion(in_file, output_file, options, flags)
 
-                if os.path.isfile(output_file) and options.remove:  # Check if output file exists before removing input
+                if os.path.isfile(output_file) and os.path.getsize(output_file)> 0 and options['remove']:  # Check if output file exists before removing input
                     os.remove(in_file)
         else:
             print(f"Skipping {in_file} as it looks like criteria is already be satisfied.")
-    else: return
 
 
 def check_command_availability(command):
