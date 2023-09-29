@@ -4,9 +4,21 @@ import subprocess
 import sys
 import json
 import logging
+import platform
+
 
 logging.basicConfig(level=logging.INFO)
 logging.info("To Do: logging")
+
+OS = ''
+if os.name == 'posix':
+    if platform.system() == 'Darwin':
+        OS ='macOS'
+    elif platform.system() == 'Linux':
+        OS = 'Linux'
+elif os.name == 'nt':
+    OS = 'Windows'
+
 
 VALID_VIDEO_EXTENSIONS = ['mp4', 'mkv', 'avi', 'mov']
 
@@ -28,8 +40,8 @@ BITRATES = {
     'high': {
         '360': '1500k',
         '480': '1800k',
-        '720': '6000k',
-        '1080': '12000k',
+        '720': '7500k',
+        '1080': '16000k',
         '2160': '50000k'
     }
 }
@@ -94,27 +106,33 @@ def should_process_video(input_file, options):
     if input_file.split('.')[-1].lower() not in VALID_VIDEO_EXTENSIONS:# or input_file.startswith('.'):
         process_flags['valid_filetype'] = False
 
-    info = get_video_info(input_file)
-    video_stream = [stream for stream in info['streams'] if stream['codec_type'] == 'video'][0]
+    try:
+        info = get_video_info(input_file)
+        video_stream = [stream for stream in info['streams'] if stream['codec_type'] == 'video'][0]
 
-    # Check codec
-    if options['codec'] == "h265" and video_stream['codec_name'] == 'hevc':
-        process_flags['codec'] = False
+        # Check codec
+        if options['codec'] == "h265" and video_stream['codec_name'] == 'hevc':
+            process_flags['codec'] = False
 
-    # Check resolution
-    current_height = int(video_stream['height'])
-    target_height = int(options['resolution'].split('p')[0])
-    if current_height == target_height:
-        process_flags['resolution'] = False
+        # Check resolution
+        current_height = int(video_stream['height'])
+        target_height = int(options['resolution'].split('p')[0])
+        if current_height == target_height:
+            process_flags['resolution'] = False
 
-    # Check bitrate
-    if options['bitrate'] != 'unchanged':
-        current_bitrate = int(video_stream.get('bit_rate', '0'))
-        target_bitrate = int(BITRATES[options['bitrate']][options['resolution']].replace('k', '000'))
-        if current_bitrate <= target_bitrate:
+        # Check bitrate
+        if options['bitrate'] != 'unchanged':
+            current_bitrate = int(video_stream.get('bit_rate', '0'))
+            target_bitrate = int(BITRATES[options['bitrate']][options['resolution']].replace('k', '000'))
+            if current_bitrate <= target_bitrate:
+                process_flags['bitrate'] = False
+        else:
             process_flags['bitrate'] = False
-    else:
-        process_flags['bitrate'] = False
+
+    except Exception as e:
+        print(f"Warning: Could not process file '{input_file}'. Reason: {e}")
+        for key in process_flags:
+            process_flags[key] = False
 
     return process_flags
 
@@ -180,6 +198,11 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
     -------
     None
     """
+
+    # Map CRF value to global_quality value
+    # Assuming a linear mapping: global_quality = 5 * (51 - CRF)
+    global_quality_value = 5 * (51 - options['quality'])
+
     temp_cut_file = None
 
     # Handle the cut operation
@@ -220,9 +243,19 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
     cmd = ["ffmpeg", "-i", input_file]
 
     # Only add the codec option if it's being changed
+    # always convert h264 videos to HEVC/h265
     if flags['codec']:
-        codec_options = "libx265" if options['codec'] == "h265" else "libx264"
-        cmd.extend(["-c:v", codec_options])
+        ## if macOS use HW encer/decoder VideoToolbox from Apple (AudioToolbox is also available on ffmpeg)
+        if OS == 'macOS': ## could also be implemented as if hardwareaccelerationavailable():
+            #cmd.extend(["-c:v", "h264_videotoolbox" if options['codec'] == "h264" else "hevc_videotoolbox"])
+            cmd.extend(['-c:v','hevc_videotoolbox',
+                        "-global_quality", str(global_quality_value)
+                        ])
+        else: # software encoder TO DO for other OS & GPUs acceleration 
+            #codec_options = "libx265" if options['codec'] == "h265" else "libx264"
+            cmd.extend(["-c:v", "libx265" if options['codec'] == "h265" else "libx264",
+                        "-crf", str(options['quality'])])
+
 
     # Only add the bitrate option if it's not 'unchanged' and it's being changed
     if options['bitrate'] != 'unchanged' and flags['bitrate']:
@@ -239,7 +272,7 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
         cmd.extend(["-vf", ",".join(vf_options)])
 
     logging.info(f"Running these changes on {input_file} \n {' '.join(cmd)}")
-    cmd.extend(["-y", output_file])
+    cmd.extend(["-y", output_file]) ## overwrite if it 
     subprocess.run(cmd)
     logging.info(' '.join(cmd))
 
@@ -277,6 +310,7 @@ def run_file(in_file, options):
     logging.info(f'- Input file: {in_file}')
     logging.info(f'{os.path.basename(in_file)}')
 
+    
     if in_file.split('.')[-1].lower() in VALID_VIDEO_EXTENSIONS : ## not .DS_Store
         flags = should_process_video(in_file, options)
         if flags['valid_filetype']:
@@ -290,7 +324,7 @@ def run_file(in_file, options):
                     os.remove(in_file)
         else:
             print(f"Skipping {in_file} as it looks like criteria is already be satisfied.")
-
+    
 
 def check_command_availability(command):
     try:
@@ -318,6 +352,7 @@ def main():
     parser.add_argument("--resolution", choices=["360", "480", "720", "1080", "2160"], default="1080", help="Target video resolution.")
     parser.add_argument("--bitrate", default="unchanged", help="Target bitrate level. Can be 'low', 'mid', 'high', or any numeric value (e.g., '4000k').")
     parser.add_argument("--codec", choices=["h265", "h264"], default="h265", help="Video codec to use, default is HEVC ;) .")
+    parser.add_argument("--quality",type=int, default=13, choices=range(0, 52), help="Quality (integer-) value for encoding. Lower is better, but will produce bigger files. Range: [0-51]. Default is 13.")
     parser.add_argument("--crop", action="store_true", help="Crop video for portrait mode on phones.")
     parser.add_argument("--remove", action="store_true", help="Remove the input file after conversion.")
     parser.add_argument("--cut", nargs='+', choices=range(1, 3), help="Cut video from specific timestamps. Either provide start and end timestamps or just the start timestamp.")
@@ -329,6 +364,7 @@ def main():
         'resolution': args.resolution,
         'bitrate': args.bitrate,
         'codec': args.codec,
+        'quality': args.quality,
         'crop': args.crop,
         'remove': args.remove,
         'cut': args.cut,
