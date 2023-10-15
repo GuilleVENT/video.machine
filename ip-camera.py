@@ -19,7 +19,7 @@ flashlight_on = False
 ANDROID_IP_PORT = "****"
 PI_CAM_IP_PORT  = "****"
 
-IP_PORT  =  ANDROID_IP_PORT#"http://192.168.178.35:8080"
+IP_PORT  =  ANDROID_IP_PORT#
 
 if IP_PORT == ANDROID_IP_PORT:
     url_suffix = '/video'
