@@ -16,9 +16,24 @@ logging.basicConfig(filename='ip-camera.log', filemode='w',
 
 flashlight_on = False
 
-IP_PORT  =  '*******'
-URL_VID_STREAM = f'{IP_PORT}/video'
+ANDROID_IP_PORT = "****"
+PI_CAM_IP_PORT  = "****"
 
+IP_PORT  =  ANDROID_IP_PORT#"http://192.168.178.35:8080"
+
+if IP_PORT == ANDROID_IP_PORT:
+    url_suffix = '/video'
+else:
+    url_suffix = ''
+
+URL_VID_STREAM = f'{IP_PORT}{url_suffix}'
+
+VIDEO_PATH_PC = "\\\\guillermonas.local\\Fotos\\IPcam\\events"
+VIDEO_PATH_MAC= "/Volumes/Fotos/IPcam/events"
+VIDEO_PATH_PI = "/mnt/nas/Fotos/IPcam/events"
+## To Do - detect OS 
+## + change path 
+VIDEO_PATH    = VIDEO_PATH_PI
 
 def load_labels(url):
     with urllib.request.urlopen(url) as response:
@@ -28,8 +43,8 @@ def load_labels(url):
 def load_yolo_model():
     try:
         yolo_network = cv2.dnn.readNet(
-                              os.path.join(os.getcwd(), "yolov3.weights")#"yolov3-tiny.weights")
-                            , os.path.join(os.getcwd(), "yolov3.cfg")#"yolov3-tiny.cfg")
+                              os.path.join(os.getcwd(), "yolov3-tiny.weights")#"yolov3-tiny.weights")
+                            , os.path.join(os.getcwd(), "yolov3-tiny.cfg")#"yolov3-tiny.cfg")
                             )
         
         layer_names = yolo_network.getLayerNames()
@@ -104,7 +119,7 @@ def detect_objects_in_frame(frame, yolo_network, output_layers, confidence_thres
     except Exception as e:
         logging.error(f" {str(os.sys.exc_info()[-1].tb_lineno)} - Error detecting objects: {e}")
 
-def detect_and_annotate_objects(video_path, yolo_network, output_layers, output_path, confidence_threshold=0.625):
+def detect_and_annotate_objects(video_path, yolo_network, output_layers, output_path, confidence_threshold=0.5):
     video_capture = cv2.VideoCapture(video_path)
     video_writer = None
 
@@ -199,6 +214,7 @@ def main():
             objects_in_frame = list(set([labels[np.argmax(detection[5:])] for detection in object_detections]))
 
             print(objects_in_frame)
+            '''
             if 'person' in objects_in_frame:
                 if flashlight_thread is None or not flashlight_thread.is_alive():
                     ## developing: turning off this annoying
@@ -207,7 +223,7 @@ def main():
                     flashlight_thread.start()
             else:
                 flashlight_on = False
-
+            '''
             if any(obj in objects_of_interest for obj in objects_in_frame):
                 object_detected = True
                 object_counter = OBJECT_PERSISTENCE
@@ -221,8 +237,12 @@ def main():
             if object_detected and video_writer is None: ## start it up there's something on this frame ! 
                 timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
                 temp_video_path = f"temp_event-{timestamp}.mp4"
-                video_writer = cv2.VideoWriter(temp_video_path, cv2.VideoWriter_fourcc(*'mp4v'), 20.0, (frame.shape[1], frame.shape[0]))
-            
+                try:
+                    video_writer = cv2.VideoWriter(temp_video_path, cv2.VideoWriter_fourcc(*'mp4v'), 24, (frame.shape[1], frame.shape[0]))
+                except: 
+                    # Try using the MJPG codec instead
+                    video_writer = cv2.VideoWriter(temp_video_path, cv2.VideoWriter_fourcc(*'MJPG'), 24, (frame.shape[1], frame.shape[0]))
+
             if video_writer: # was itiated 
                 video_writer.write(frame)
                 frame_counter += 1
@@ -230,7 +250,7 @@ def main():
                     video_writer.release()
                     video_writer = None
                     frame_counter = 0
-                    output_video_path = f"/Volumes/Fotos/IPcam/events/event-{timestamp}.mp4"
+                    output_video_path = f"{VIDEO_PATH}/event-{timestamp}.mp4"
                     detect_and_annotate_objects(temp_video_path, yolo_network, output_layers, output_video_path)
                     os.remove(temp_video_path)
 
@@ -238,12 +258,12 @@ def main():
             if not object_detected and video_writer is not None:
                 video_writer.release()
                 video_writer = None
-                output_video_path = f"/Volumes/Fotos/IPcam/events/event-{timestamp}.mp4"
+                output_video_path = f"{VIDEO_PATH}/event-{timestamp}.mp4"
                 detect_and_annotate_objects(temp_video_path, yolo_network, output_layers, output_video_path)
                 os.remove(temp_video_path)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+            #if cv2.waitKey(1) & 0xFF == ord('q'):
+            #    break
 
         video_capture.release()
         cv2.destroyAllWindows()
