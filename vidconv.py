@@ -10,7 +10,6 @@ import platform
 logging.basicConfig(level=logging.INFO)
 logging.info("To Do: logging")
 
-OS = ''
 if os.name == 'posix':
     if platform.system() == 'Darwin':
         OS ='macOS'
@@ -168,7 +167,11 @@ def prepare_strings_outfiles(in_file, options, flags):
     else:
         bitrate_str = ""
 
+    # Only add "-phone" if the video is being cropped to portrait
     crop_str = "-phone" if options['crop'] else ""
+
+    # Only add "QX" if the video is being reencoded with a different quality value
+    quality_str = f"-Q{options['quality']}" if options['quality'] else ""
 
     base_name = os.path.splitext(in_file)[0]
     output_file = f"{base_name}{codec_str}{resolution_str}{bitrate_str}{crop_str}.mp4"
@@ -352,7 +355,7 @@ def main():
     parser.add_argument("--resolution", choices=["360", "480", "720", "1080", "2160"], default="1080", help="Target video resolution.")
     parser.add_argument("--bitrate", default="unchanged", help="Target bitrate level. Can be 'low', 'mid', 'high', or any numeric value (e.g., '4000k').")
     parser.add_argument("--codec", choices=["h265", "h264"], default="h265", help="Video codec to use, default is HEVC ;) .")
-    parser.add_argument("--quality",type=int, default=13, choices=range(0, 52), help="Quality (integer-) value for encoding. Lower is better, but will produce bigger files. Range: [0-51]. Default is 13.")
+    parser.add_argument("--quality",type=int, default=5, choices=range(0, 52), help="Quality (integer-) value for encoding. Lower is better, but will produce bigger files. Range: [0-51]. Default is 5.")
     parser.add_argument("--crop", action="store_true", help="Crop video for portrait mode on phones.")
     parser.add_argument("--remove", action="store_true", help="Remove the input file after conversion.")
     parser.add_argument("--cut", nargs='+', choices=range(1, 3), help="Cut video from specific timestamps. Either provide start and end timestamps or just the start timestamp.")
