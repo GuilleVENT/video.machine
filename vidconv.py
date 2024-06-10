@@ -8,8 +8,9 @@ import platform
 
 
 logging.basicConfig(level=logging.INFO)
-logging.info("To Do: logging")
+logging.info("To Do: improve logging")
 
+OS = ''
 if os.name == 'posix':
     if platform.system() == 'Darwin':
         OS ='macOS'
@@ -45,6 +46,7 @@ BITRATES = {
     }
 }
 
+
 def get_video_info(input_file):
     """
     Get video metadata using ffprobe.
@@ -78,6 +80,7 @@ def get_video_info(input_file):
     except json.JSONDecodeError:
         sys.exit("Error: Invalid JSON output from ffprobe. Please ensure the input file is a valid video.")
 
+
 def should_process_video(input_file, options):
     """
     Determine which parts of the video should be processed based on given criteria.
@@ -101,8 +104,8 @@ def should_process_video(input_file, options):
         'valid_filetype': True
     }
 
-    # Check if the file is an mp4 or not
-    if input_file.split('.')[-1].lower() not in VALID_VIDEO_EXTENSIONS:# or input_file.startswith('.'):
+    # Check if the file is one of the valid file extensions (global)
+    if input_file.split('.')[-1].lower() not in VALID_VIDEO_EXTENSIONS:
         process_flags['valid_filetype'] = False
 
     try:
@@ -129,11 +132,12 @@ def should_process_video(input_file, options):
             process_flags['bitrate'] = False
 
     except Exception as e:
-        print(f"Warning: Could not process file '{input_file}'. Reason: {e}")
+        logging.info(f"Warning: Could not process file '{input_file}'. Reason: {e}")
         for key in process_flags:
             process_flags[key] = False
 
     return process_flags
+
 
 def prepare_strings_outfiles(in_file, options, flags):
     """
@@ -157,8 +161,11 @@ def prepare_strings_outfiles(in_file, options, flags):
 
     codec_str = "-h265" if options['codec'] == "h265" and flags['codec'] else ""
     
-    # Only add the resolution to the filename if it's being changed
+    quality_str = f"-encode-quality-{options['quality']}" if flags['codec'] else ""    
+
     resolution_str = f"-{options['resolution']}" if flags['resolution'] else ""
+
+    rm_audio_str = f"-no_audio" if options['rm_audio'] else ""
     
     # Only add the bitrate to the filename if it's being changed
     if flags['bitrate']:
@@ -167,19 +174,15 @@ def prepare_strings_outfiles(in_file, options, flags):
     else:
         bitrate_str = ""
 
-    # Only add "-phone" if the video is being cropped to portrait
-    crop_str = "-phone" if options['crop'] else ""
-
-    # Only add "QX" if the video is being reencoded with a different quality value
-    quality_str = f"-Q{options['quality']}" if options['quality'] else ""
+    crop_str = "-vertical" if options['crop'] else ""
 
     base_name = os.path.splitext(in_file)[0]
-    output_file = f"{base_name}{codec_str}{resolution_str}{bitrate_str}{crop_str}.mp4"
-    input_file = in_file
+    output_file = f"{base_name}{codec_str}{quality_str}{resolution_str}{bitrate_str}{rm_audio_str}{crop_str}.mp4"
 
-    print('FILENAMES','\n',input_file,'\n', output_file)
+    logging.info('FILENAMES','\n',in_file,'\n', output_file)
     
-    return input_file, output_file
+    return output_file
+
 
 def run_ffmpeg_conversion(input_file, output_file, options, flags):
     """
@@ -202,15 +205,11 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
     None
     """
 
-    # Map CRF value to global_quality value
-    # Assuming a linear mapping: global_quality = 5 * (51 - CRF)
-    global_quality_value = 5 * (51 - options['quality'])
-
     temp_cut_file = None
 
     # Handle the cut operation
     if options.get('cut'):
-        temp_cut_file = input_file + ".temp_cut.mp4"
+        temp_cut_file = input_file.split('.')[0] + "_temp_cut.mp4"
         cmd_cut = ["ffmpeg", "-i", input_file]
 
         if len(options['cut']) == 1:
@@ -232,7 +231,7 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
         input_file = temp_cut_file
 
     elif options.get('lengths'):
-        temp_cut_file = input_file + ".temp_cut.mp4"
+        temp_cut_file = input_file.split('.')[0] + "_temp_cut.mp4"
         minutes, seconds = divmod(options['length'], 1)  # Split whole number from decimal
         duration = minutes * 60 + seconds * 60  # Convert minutes to seconds and add additional seconds
         cmd_cut.extend(["-ss", start_time, "-t", str(duration)])
@@ -252,7 +251,7 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
         if OS == 'macOS': ## could also be implemented as if hardwareaccelerationavailable():
             #cmd.extend(["-c:v", "h264_videotoolbox" if options['codec'] == "h264" else "hevc_videotoolbox"])
             cmd.extend(['-c:v','hevc_videotoolbox',
-                        "-global_quality", str(global_quality_value)
+                        "-global_quality", str(options['quality'])
                         ])
         else: # software encoder TO DO for other OS & GPUs acceleration 
             #codec_options = "libx265" if options['codec'] == "h265" else "libx264"
@@ -275,7 +274,7 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
         cmd.extend(["-vf", ",".join(vf_options)])
 
     logging.info(f"Running these changes on {input_file} \n {' '.join(cmd)}")
-    cmd.extend(["-y", output_file]) ## overwrite if it 
+    cmd.extend(["-y", output_file]) ## overwrite if it exists here
     subprocess.run(cmd)
     logging.info(' '.join(cmd))
 
@@ -286,7 +285,7 @@ def run_ffmpeg_conversion(input_file, output_file, options, flags):
         os.remove(temp_cut_file)
 
 
-def run_file(in_file, options):
+def run_file_conversion(in_file, options):
     """
     Process a single video file based on the provided options. It checks whether 
     these conversions actually have to be made to the file or the file actually has 
@@ -298,13 +297,18 @@ def run_file(in_file, options):
         Path to the video file to be processed.
     options : dict
         Dictionary containing conversion criteria. Supported keys are:
+       args.quality,
+           
         - 'resolution': Target video resolution (e.g., "1080").
         - 'bitrate': Target bitrate level (e.g., "low", "mid", "high", "unchanged").
         - 'codec': Video codec to use (e.g., "h265", "h264").
+        - 'quality': Encoding Quality. Lower is better, but will produce bigger files.
         - 'crop': Boolean indicating if video should be cropped for portrait mode on phones.
         - 'remove': Boolean indicating if the input file should be removed after conversion.
         - 'cut': List containing start (and optionally end) timestamps for cutting the video.
         - 'length': Float indicating the length of the video in seconds or minutes.
+        - 'rm_audio': Whether to remove audio track of the video.
+        - 'gps': Whether to extract the gps data into a separate gpx-file.
 
     Returns
     -------
@@ -318,15 +322,16 @@ def run_file(in_file, options):
         flags = should_process_video(in_file, options)
         if flags['valid_filetype']:
             if any(flags.values()):  # Check if any of the flags are set to True
-                in_file, output_file = prepare_strings_outfiles(in_file, options, flags)
+                out_file = prepare_strings_outfiles(in_file, options, flags)
+
                 if not os.path.isfile(output_file): # if file doesn't exist yet
                     # Modify run_ffmpeg_conversion to take into account the flags
                     run_ffmpeg_conversion(in_file, output_file, options, flags)
 
-                if os.path.isfile(output_file) and os.path.getsize(output_file)> 0 and options['remove']:  # Check if output file exists before removing input
+                if os.path.isfile(output_file) and os.path.getsize(output_file) > 0 and options['remove']:  # Check if output file exists before removing input
                     os.remove(in_file)
         else:
-            print(f"Skipping {in_file} as it looks like criteria is already be satisfied.")
+            logging.info(f"Skipping {in_file}.")
     
 
 def check_command_availability(command):
@@ -355,12 +360,13 @@ def main():
     parser.add_argument("--resolution", choices=["360", "480", "720", "1080", "2160"], default="1080", help="Target video resolution.")
     parser.add_argument("--bitrate", default="unchanged", help="Target bitrate level. Can be 'low', 'mid', 'high', or any numeric value (e.g., '4000k').")
     parser.add_argument("--codec", choices=["h265", "h264"], default="h265", help="Video codec to use, default is HEVC ;) .")
-    parser.add_argument("--quality",type=int, default=5, choices=range(0, 52), help="Quality (integer-) value for encoding. Lower is better, but will produce bigger files. Range: [0-51]. Default is 5.")
+    parser.add_argument("--quality",type=int, default=0, choices=range(0, 51), help="Quality (integer-) value for encoding. Lower is better, but will produce bigger files. Range: [0-51]. Default lossless = 0.")
     parser.add_argument("--crop", action="store_true", help="Crop video for portrait mode on phones.")
     parser.add_argument("--remove", action="store_true", help="Remove the input file after conversion.")
     parser.add_argument("--cut", nargs='+', choices=range(1, 3), help="Cut video from specific timestamps. Either provide start and end timestamps or just the start timestamp.")
     parser.add_argument("--length", type=float, help="Length of the video in seconds. If the value is decimal, it's interpreted as minutes.")
-
+    parser.add_argument("--rm_audio", type='store_true', help="Whether to remove the audio track of the video file.")
+    parser.add_argument("--gps", type='store_true', help="Whether to extract the GPS-data (if exists) to a .gpx file with the same name in the same folder. If you leave out this option and use --remove you'll be forever missing out on your GPS data because this is the only way to maintain it after re-encoding the file.")
 
     args = parser.parse_args()
     options = {
@@ -371,7 +377,9 @@ def main():
         'crop': args.crop,
         'remove': args.remove,
         'cut': args.cut,
-        'length': args.length
+        'length': args.length,
+        'rm_audio': args.rm_audio,  ## TO DO 
+        'gps': args.gps             ## TO DO 
     }
     
     if args.cut and len(args.cut) > 1 and args.length:
@@ -380,10 +388,11 @@ def main():
     check_command_availability("ffmpeg")
     check_command_availability("ffprobe")
 
+    ## if INPUT FILE: 
     if os.path.isfile(args.input_path):
-        run_file(args.input_path, options)
+        run_file_conversion(args.input_path, options)
         
-
+    ## if INPUT FOLDER: 
     elif os.path.isdir(args.input_path):
         # If the remove option is set, ask for confirmation
         if args.remove:
@@ -394,9 +403,9 @@ def main():
         for dirpath, dirnames, filenames in os.walk(args.input_path):
             for file in filenames:
                 full_path = os.path.join(dirpath, file)
-                run_file(full_path, options)
+                run_file_conversion(full_path, options)
     else:
-        print("Invalid path. Please provide a valid video file or directory.")
+        logging.info("Invalid path. Please provide a valid video file or directory.")
 
 if __name__ == "__main__":
     main()
