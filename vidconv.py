@@ -527,8 +527,6 @@ class VideoConverter:
                 start_time, end_time = self.cut
                 cmd_cut.extend(["-ss", start_time, "-to", end_time])
 
-            cmd_cut.append(temp_cut_file)
-
             # copy codec 
             cmd_cut.extend(["-c", "copy", temp_cut_file])
 
@@ -644,10 +642,10 @@ class VideoConverter:
 
         # Crop and/or scale
         vf_options = []
-        if flags['resolution']:
-            vf_options.append(f"scale=-1:{self.resolution}")
         if self.crop:
             vf_options.append("crop=ih*9/16:ih")
+        if flags['resolution']:
+            vf_options.append(f"scale=-1:{self.resolution}")
         if vf_options:
             cmd.extend(["-vf", ",".join(vf_options)])
 
