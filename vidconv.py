@@ -125,7 +125,7 @@ class VideoConverter:
 
         for required_dependency in ['ffmpeg', 'ffprobe', 'exiftool']:
             self.check_command_availability(required_dependency)
-            ## TO DO check for other availability 
+            ## created symlink with sudo ln -s /usr/bin/vendor_perl/exiftool /usr/bin/exiftool
 
         self.hw_acceleration = self.get_available_hw_acceleration()
 
@@ -450,26 +450,31 @@ class VideoConverter:
             path to the output file
 
         """
-        codec_str = f"-{self.codec}" if self.codec and flags['codec'] else ""
-        quality_str = f"-q{self.quality}" if flags['codec'] else ""
-        resolution_str = f"-{self.resolution}p" if flags['resolution'] else ""
-        rm_audio_str = "-noaudio" if self.rm_audio else ""
+
+        # Suffix components without leading hyphens
+        codec_str = f"{self.codec}" if self.codec and flags['codec'] else ""
+        quality_str = f"q{self.quality}" if flags['codec'] else ""
+        resolution_str = f"{self.resolution}p" if flags['resolution'] else ""
+        rm_audio_str = "noaudio" if self.rm_audio else ""
         bitrate_str = ""
         if flags['bitrate']:
             if self.bitrate in BITRATES:
                 bitrate_in_mbps = int(BITRATES[self.bitrate][self.resolution].replace('k', '')) / 1000
-                bitrate_str = f"-{bitrate_in_mbps}Mbps"
+                bitrate_str = f"{bitrate_in_mbps}Mbps"
             else:
-                bitrate_str = f"-{self.bitrate}"  # Use the user-provided numeric value
-        crop_str = "-cropped" if self.crop else ""
-        # GPS flags
-        gps_str = "-keepGPS" if self.keep_gps else "-noGPS"
-        extract_gpx_str = "-extractGPX" if self.extract_gpx else ""
+                bitrate_str = f"{self.bitrate}"  # Use the user-provided numeric value
+        crop_str = "cropped" if self.crop else ""
+        # GPS flags (optional for filename)
+        gps_str = "keepGPS" if self.keep_gps else "noGPS"
+        extract_gpx_str = "extractGPX" if self.extract_gpx else ""
 
+        # Combine relevant components for the filename
         components = [codec_str, quality_str, resolution_str, bitrate_str, rm_audio_str, crop_str]
-        # Filter out empty strings and join with underscores for clarity
+        # Filter out empty strings
         components = [comp for comp in components if comp]
+        # Join components with underscores
         suffix = "_".join(components) if components else "converted"
+        # Construct the output filename
         base_name = os.path.splitext(in_file)[0]
         output_file = f"{base_name}_{suffix}.mp4"
 
@@ -643,11 +648,17 @@ class VideoConverter:
         # Crop and/or scale
         vf_options = []
         if self.crop:
-            vf_options.append("crop=ih*9/16:ih")
+            #vf_options.append("crop=ih*9/16:ih")
+            vf_options.append("crop='trunc(ih*9/16/2)*2:ih:trunc((iw-trunc(ih*9/16/2)*2)/2)':0")
         if flags['resolution']:
-            vf_options.append(f"scale=-1:{self.resolution}")
+            #vf_options.append(f"scale=-1:{self.resolution}")
+            # -2 to autocalculate width to keep aspect ratio
+            vf_options.append(f"scale=-2:{self.resolution}")
         if vf_options:
             cmd.extend(["-vf", ",".join(vf_options)])
+
+        # Specify pixel format to avoid deprecated warnings
+        cmd.extend(["-pix_fmt", "yuv420p"])
 
 
         # Handle GPS extraction before running ffmpeg
